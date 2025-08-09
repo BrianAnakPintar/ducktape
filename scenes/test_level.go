@@ -8,6 +8,7 @@ import (
 	"github.com/BrianAnakPintar/ducktape/components"
 	c "github.com/BrianAnakPintar/ducktape/constants"
 	"github.com/BrianAnakPintar/ducktape/systems"
+	"github.com/BrianAnakPintar/ducktape/grid"
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/lafriks/go-tiled"
 	"github.com/yohamta/donburi"
@@ -24,6 +25,7 @@ type TestLevelScene struct {
 	renderSystem systems.RenderSystem
 	physicsSystem systems.PhysicsSystem
 	gravitySystem systems.GravitySystem
+	collisionSystem systems.CollisionSystem
 
 	playerQuery donburi.Query
 }
@@ -36,6 +38,7 @@ func (t *TestLevelScene) Update() {
 	t.animSystem.Update(t.world)
 	t.gravitySystem.Update(t.world)
 	t.physicsSystem.Update(t.world)
+	t.collisionSystem.Update(t.world)
 }
 
 func (t *TestLevelScene) Render(screen *ebiten.Image) {
@@ -62,16 +65,18 @@ func (t *TestLevelScene) HandleLayer(layer *tiled.Layer) {
 				archetypes.NewPlayer(t.world, math.NewVec2(0,100))
 			}
 		}
-	} else if layer.Name == c.CollisionLayer {
-		for y := range t.levelMap.Height {
-			for x := range t.levelMap.Width {
-				tile := layer.Tiles[y*t.levelMap.Width + x]
-				if tile == nil {
-					continue
-				}
-			}
-		}
-	}	
+	} 
+	// collision is handled in the OnEnterScene()
+	// else if layer.Name == c.CollisionLayer {
+	// 	for y := range t.levelMap.Height {
+	// 		for x := range t.levelMap.Width {
+	// 			tile := layer.Tiles[y*t.levelMap.Width + x]
+	// 			if tile == nil {
+	// 				continue
+	// 			}
+	// 		}
+	// 	}
+	// }	
 }
 
 func (t *TestLevelScene) LoadMap(path string) {
@@ -88,6 +93,34 @@ func (t *TestLevelScene) LoadMap(path string) {
 
 func (t *TestLevelScene) OnEnterScene() {
 	t.LoadMap(c.SpawnMapPath)
+
+	cell := float64(t.levelMap.TileWidth)
+	uniformGrid := grid.NewUniformGrid(cell)
+
+	// static tiles insertion for collision system
+	for _, layer := range t.levelMap.Layers {
+		if layer.Name != c.CollisionLayer || layer.Tiles == nil {
+			continue
+		}
+
+		w := t.levelMap.Width
+		for i, tile := range layer.Tiles {
+			if tile == nil {
+				continue
+			}
+
+			x := float64(i%w) * cell
+			y := float64(i/w) * cell
+			uniformGrid.InsertStatic(i, grid.AABB{
+				MinX: x,
+				MinY: y,
+				MaxX: x + cell,
+				MaxY: y + cell,
+			})
+		}
+	}
+
+	t.collisionSystem.SetGrid(uniformGrid)
 }
 
 func (t *TestLevelScene) OnLeaveScene() {
@@ -102,6 +135,7 @@ func NewTestLevelScene(numEnemies int) TestLevelScene {
 		renderSystem: *systems.NewRenderSystem(),
 		physicsSystem: *systems.NewPhysicsSystem(),
 		gravitySystem: *systems.NewGravitySystem(),
+		collisionSystem: *systems.NewCollisionSystem(),
 		playerQuery: *donburi.NewQuery(filter.Contains(components.Player, components.Velocity, components.Transform)),
 	}
 }
